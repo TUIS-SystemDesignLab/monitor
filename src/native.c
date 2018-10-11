@@ -33,9 +33,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 static HANDLE g_current_process;
 static uint32_t g_current_process_id;
 static HANDLE g_current_thread;
-static HANDLE g_stdin_handle;
-static HANDLE g_stdout_handle;
-static HANDLE g_stderr_handle;
 
 static int32_t g_win32_error_offset;
 static int32_t g_nt_status_offset;
@@ -111,6 +108,12 @@ static NTSTATUS (WINAPI *pNtResumeThread)(
     HANDLE ThreadHandle, PULONG SuspendCount);
 
 static DWORD (WINAPI *pGetTickCount)();
+
+static BOOL(WINAPI *pQueryPerformanceCounter)(LARGE_INTEGER *lpPerformanceCount);
+
+static BOOL(WINAPI *pQueryPerformanceFrequency)(LARGE_INTEGER *lpFrequency); 
+
+static BOOL(WINAPI *pGlobalMemoryStatusEx)(LPMEMORYSTATUSEX lpBuffer);
 
 static NTSTATUS (WINAPI *pLdrRegisterDllNotification)(ULONG Flags,
     LDR_DLL_NOTIFICATION_FUNCTION LdrDllNotificationFunction,
@@ -222,9 +225,6 @@ int native_init()
     g_current_process = GetCurrentProcess();
     g_current_process_id = GetCurrentProcessId();
     g_current_thread = GetCurrentThread();
-    g_stdin_handle = GetStdHandle(STD_INPUT_HANDLE);
-    g_stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
-    g_stderr_handle = GetStdHandle(STD_ERROR_HANDLE);
 
     // TODO Use the slab allocator here as well.
     uint8_t *memory = VirtualAlloc(NULL, 0x1000,
@@ -259,6 +259,115 @@ int native_init()
     unsigned long old_protect;
     VirtualProtect(*g_pointers[0], 0x1000, PAGE_EXECUTE_READ, &old_protect);
 
+        // TODO Use the slab allocator here as well.pQueryPerformanceCounter
+        uint8_t *memory_qc = VirtualAlloc(NULL, 0x1000,
+                MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+        if (memory_qc == NULL) return -1;
+
+        for (uint32_t idx = 0; g_funcnames[idx] != NULL; idx++) {
+                *g_pointers[idx] = memory_qc;
+                memory_qc += 64;
+
+                const uint8_t *fp = (const uint8_t *)GetProcAddress(
+                        GetModuleHandle("ntdll"), g_funcnames[idx]);
+                if (fp == NULL) {
+                        pipe("CRITICAL:Error retrieving address of %z!",
+                                g_funcnames[idx]);
+                        continue;
+                }
+
+                _native_copy_function(*g_pointers[idx], fp);
+        }
+
+        *(uint8_t **)&pQueryPerformanceCounter = memory_qc;
+        memory_qc += 128;
+
+        // Checked that this will work under at least Windows XP, Windows 7, and
+        // 64-bit Windows 7.
+        // <83>A<83>h<83><8c><83>X<8d>À<95>W<82>ð<93>Á<92>è<82>µ<82>Ä<81>A<92>¼<90>Ú<8a>Ö<90><94><82>ð<8e>À<8d>s<82>³<82>¹<82>Ä<82>¢<82>é
+        uint8_t *get_QueryPerformanceCounter_addr = _native_follow_get_tick_count((uint8_t *)
+                GetProcAddress(GetModuleHandle("kernel32"), "QueryPerformanceCounter"));
+
+        _native_copy_function((uint8_t *)pQueryPerformanceCounter, get_QueryPerformanceCounter_addr);
+
+        unsigned long old_protect_qc;
+        VirtualProtect(*g_pointers[0], 0x1000, PAGE_EXECUTE_READ, &old_protect_qc);
+
+        // *****************
+
+        // TODO Use the slab allocator here as well.pQueryPerformanceFrequency
+        uint8_t *memory_qf = VirtualAlloc(NULL, 0x1000,
+                MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+        if (memory_qf == NULL) return -1;
+
+        for (uint32_t idx = 0; g_funcnames[idx] != NULL; idx++) {
+                *g_pointers[idx] = memory_qf;
+                memory_qf += 64;
+
+                const uint8_t *fp = (const uint8_t *)GetProcAddress(
+                        GetModuleHandle("ntdll"), g_funcnames[idx]);
+                if (fp == NULL) {
+                        pipe("CRITICAL:Error retrieving address of %z!",
+                                g_funcnames[idx]);
+                        continue;
+                }
+
+                _native_copy_function(*g_pointers[idx], fp);
+        }
+
+        *(uint8_t **)&pQueryPerformanceFrequency = memory_qf;
+        memory_qf += 128;
+
+        // Checked that this will work under at least Windows XP, Windows 7, and
+        // 64-bit Windows 7.
+        // <83>A<83>h<83><8c><83>X<8d>À<95>W<82>ð<93>Á<92>è<82>µ<82>Ä<81>A<92>¼<90>Ú<8a>Ö<90><94><82>ð<8e>À<8d>s<82>³<82>¹<82>Ä<82>¢<82>é
+        uint8_t *get_QueryPerformanceFrequency_addr = _native_follow_get_tick_count((uint8_t *)
+                GetProcAddress(GetModuleHandle("kernel32"), "QueryPerformanceFrequency"));
+
+        _native_copy_function((uint8_t *)pQueryPerformanceFrequency, get_QueryPerformanceFrequency_addr);
+
+        unsigned long old_protect_qf;
+        VirtualProtect(*g_pointers[0], 0x1000, PAGE_EXECUTE_READ, &old_protect_qf);
+
+        // *****************
+
+        // TODO Use the slab allocator here as well.pGlobalMemoryStatusEx
+        uint8_t *memory_g = VirtualAlloc(NULL, 0x1000,
+                MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+        if (memory_g == NULL) return -1;
+
+        for (uint32_t idx = 0; g_funcnames[idx] != NULL; idx++) {
+                *g_pointers[idx] = memory_g;
+                memory_g += 64;
+
+                const uint8_t *fp = (const uint8_t *)GetProcAddress(
+                        GetModuleHandle("ntdll"), g_funcnames[idx]);
+                if (fp == NULL) {
+                        pipe("CRITICAL:Error retrieving address of %z!",
+                                g_funcnames[idx]);
+                        continue;
+                }
+
+                _native_copy_function(*g_pointers[idx], fp);
+        }
+
+        *(uint8_t **)&pGlobalMemoryStatusEx = memory_g;
+        memory_g += 128;
+
+        // Checked that this will work under at least Windows XP, Windows 7, and
+        // 64-bit Windows 7.
+        // <83>A<83>h<83><8c><83>X<8d>À<95>W<82>ð<93>Á<92>è<82>µ<82>Ä<81>A<92>¼<90>Ú<8a>Ö<90><94><82>ð<8e>À<8d>s<82>³<82>¹<82>Ä<82>¢<82>é
+        uint8_t *get_GlobalMemoryStatusEx_addr = _native_follow_get_tick_count((uint8_t *)
+                GetProcAddress(GetModuleHandle("kernel32"), "QueryPerformanceFrequency"));
+
+        _native_copy_function((uint8_t *)pGlobalMemoryStatusEx, get_GlobalMemoryStatusEx_addr);
+
+        unsigned long old_protect_g;
+        VirtualProtect(*g_pointers[0], 0x1000, PAGE_EXECUTE_READ, &old_protect_g);
+        // **************************************************************
+
+
+
     *(FARPROC *) &pLdrRegisterDllNotification = GetProcAddress(
         GetModuleHandle("ntdll"), "LdrRegisterDllNotification");
 
@@ -279,7 +388,7 @@ int native_init()
         (const uint8_t *) pRtlGetLastNtStatus);
     if(g_nt_status_offset < 0) {
         pipe("CRITICAL:Unknown offset for NtStatus!");
-        return -1;
+	return -1;
     }
     return 0;
 }
@@ -289,7 +398,7 @@ int virtual_query_ex(HANDLE process_handle, const void *addr,
 {
     assert(pNtQueryVirtualMemory != NULL,
         "pNtQueryVirtualMemory is NULL!", 0);
-    SIZE_T return_length;
+	    SIZE_T return_length;
     if(NT_SUCCESS(pNtQueryVirtualMemory(process_handle, addr, 0, mbi,
             sizeof(MEMORY_BASIC_INFORMATION_CROSS), &return_length)) != FALSE
             && return_length == sizeof(MEMORY_BASIC_INFORMATION_CROSS)) {
@@ -549,6 +658,25 @@ uint32_t get_tick_count()
     return pGetTickCount();
 }
 
+
+BOOL get_QueryPerformanceFrequency(LARGE_INTEGER *lpPerformanceCount)
+{
+        return pQueryPerformanceFrequency(lpPerformanceCount);
+}
+
+BOOL get_QueryPerformanceCounter(LARGE_INTEGER *lpPerformanceCount)
+{
+        return pQueryPerformanceCounter(lpPerformanceCount);
+}
+
+BOOL get_GlobalMemoryStatusEx(LPMEMORYSTATUSEX lpBuffer)
+{
+        return pGlobalMemoryStatusEx(lpBuffer);
+}
+
+// **************
+
+
 void register_dll_notification(LDR_DLL_NOTIFICATION_FUNCTION fn, void *param)
 {
     void *cookie = NULL;
@@ -659,29 +787,4 @@ uint32_t resume_thread(HANDLE thread_handle)
         return suspend_count;
     }
     return 0;
-}
-
-int set_std_handle(DWORD std_handle, HANDLE file_handle)
-{
-    if(std_handle == STD_INPUT_HANDLE) {
-        g_stdin_handle = file_handle;
-        return 0;
-    }
-    if(std_handle == STD_OUTPUT_HANDLE) {
-        g_stdout_handle = file_handle;
-        return 0;
-    }
-    if(std_handle == STD_ERROR_HANDLE) {
-        g_stderr_handle = file_handle;
-        return 0;
-    }
-    return -1;
-}
-
-int is_std_handle(HANDLE file_handle)
-{
-    return
-        file_handle == g_stdin_handle ||
-        file_handle == g_stdout_handle ||
-        file_handle == g_stderr_handle;
 }

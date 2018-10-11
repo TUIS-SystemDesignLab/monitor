@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <windows.h>
 #include <wincrypt.h>
 #include <security.h>
-
+#include "ws2tcpip.h"
 typedef LONG NTSTATUS;
 typedef void *PIO_APC_ROUTINE;
 
@@ -56,7 +56,7 @@ typedef struct _OBJECT_ATTRIBUTES {
 } OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
 
 typedef void *HINTERNET;
-
+/*
 typedef struct addrinfo {
     int              ai_flags;
     int              ai_family;
@@ -78,7 +78,7 @@ typedef struct addrinfoW {
     struct sockaddr  *ai_addr;
     struct addrinfoW *ai_next;
 } ADDRINFOW, *PADDRINFOW;
-
+*/
 typedef enum _KEY_INFORMATION_CLASS {
     KeyBasicInformation            = 0,
     KeyNodeInformation             = 1,
@@ -231,13 +231,6 @@ typedef struct _FILE_BASIC_INFORMATION {
     LARGE_INTEGER ChangeTime;
     ULONG FileAttributes;
 } FILE_BASIC_INFORMATION, *PFILE_BASIC_INFORMATION;
-
-typedef struct _FILE_RENAME_INFORMATION {
-    BOOLEAN ReplaceIfExists;
-    HANDLE RootDirectory;
-    ULONG FileNameLength;
-    WCHAR FileName[1];
-} FILE_RENAME_INFORMATION, *PFILE_RENAME_INFORMATION;
 
 typedef struct _RTL_DRIVE_LETTER_CURDIR {
     USHORT Flags;
@@ -735,10 +728,7 @@ typedef enum _SHUTDOWN_ACTION {
 
 #define ProcessBasicInformation 0
 #define ThreadBasicInformation 0
-
-#ifndef UNW_FLAG_NHANDLER
 #define UNW_FLAG_NHANDLER 0
-#endif
 
 #define FILE_PIPE_QUEUE_OPERATION           0x00000000
 #define FILE_PIPE_COMPLETE_OPERATION        0x00000001

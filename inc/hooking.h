@@ -1,6 +1,6 @@
 /*
 Cuckoo Sandbox - Automated Malware Analysis.
-Copyright (C) 2014-2018 Cuckoo Foundation.
+Copyright (C) 2010-2015 Cuckoo Foundation.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -28,47 +28,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define HOOK_PRUNE_RESOLVERR 1
 
-#define HOOK_MODE_ALL      (0 << 0)
-#define HOOK_MODE_DUMPTLS  (1 << 0)
-#define HOOK_MODE_IEXPLORE (1 << 1)
-#define HOOK_MODE_EXPLOIT  (1 << 2)
-#define HOOK_MODE_OFFICE   (1 << 3)
-#define HOOK_MODE_PDF      (1 << 4)
-#define HOOK_MODE_FLASH    (1 << 5)
-
-#define HOOK_MODE_BROWSER \
-    (HOOK_MODE_IEXPLORE | HOOK_MODE_EXPLOIT | HOOK_MODE_FLASH)
+#define HOOK_MODE_ALL      0
+#define HOOK_MODE_DUMPTLS  1
+#define HOOK_MODE_IEXPLORE 2
+#define HOOK_MODE_EXPLOIT  4
+#define HOOK_MODE_OFFICE   8
+#define HOOK_MODE_PDF      16
 
 #define HOOK_INSN_NONE     0
 #define HOOK_INSN_EAX      1
-#define HOOK_INSN_RAX      1
 #define HOOK_INSN_ECX      2
-#define HOOK_INSN_RCX      2
 #define HOOK_INSN_EDX      3
-#define HOOK_INSN_RDX      3
 #define HOOK_INSN_EBX      4
-#define HOOK_INSN_RBX      4
 #define HOOK_INSN_ESP      5
-#define HOOK_INSN_RSP      5
 #define HOOK_INSN_EBP      6
-#define HOOK_INSN_RBP      6
 #define HOOK_INSN_ESI      7
-#define HOOK_INSN_RSI      7
 #define HOOK_INSN_EDI      8
-#define HOOK_INSN_RDI      8
-#define HOOK_INSN_R8       9
-#define HOOK_INSN_R9      10
-#define HOOK_INSN_R10     11
-#define HOOK_INSN_R11     12
-#define HOOK_INSN_R12     13
-#define HOOK_INSN_R13     14
-#define HOOK_INSN_R14     15
-#define HOOK_INSN_R15     16
-#define HOOK_INSN_STK(n)  (17+n)
+#define HOOK_INSN_VAR32    9
+#define HOOK_INSN_STK(n)   (10+n)
 
 #define HOOK_TYPE_NORMAL   0
 #define HOOK_TYPE_INSN     1
 #define HOOK_TYPE_GUARD    2
+
+#define HOOK_INSN_WRAPPER(a, b, c, d, ...) ( \
+    ((HOOK_INSN_##a) << 24) | ((HOOK_INSN_##b) << 16) | \
+    ((HOOK_INSN_##c) << 8) | ((HOOK_INSN_##d) << 0))
+
+#define HOOK_INSN(...) \
+    HOOK_INSN_WRAPPER(__VA_ARGS__, NONE, NONE, NONE, NONE)
 
 typedef struct _hook_t {
     // Library and function name.
@@ -139,8 +127,7 @@ int lde(const void *addr);
 int hook_in_monitor();
 
 int hook(hook_t *h, void *module_handle);
-int hook_insn(hook_t *h, uint32_t signature);
-uint8_t *hook_get_mem();
+int hook_insn(hook_t *h, uint32_t signature, ...);
 int hook_missing_hooks(HMODULE module_handle);
 
 #define DISASM_BUFSIZ 128
@@ -189,15 +176,11 @@ uint8_t *hook_modulecb_vbe6(
     hook_t *h, uint8_t *module_address, uint32_t module_size
 );
 
+uint8_t *hook_modulecb_escript_api(
+    hook_t *h, uint8_t *module_address, uint32_t module_size
+);
+
 uint8_t *hook_modulecb_jscript(
-    hook_t *h, uint8_t *module_address, uint32_t module_size
-);
-
-uint8_t *hook_insmodulecb_jscript(
-    hook_t *h, uint8_t *module_address, uint32_t module_size
-);
-
-uint8_t *hook_insmodulecb_vbscript(
     hook_t *h, uint8_t *module_address, uint32_t module_size
 );
 
@@ -208,23 +191,6 @@ uint8_t *hook_modulecb_mshtml(
 uint8_t *hook_modulecb_ncrypt(
     hook_t *h, uint8_t *module_address, uint32_t module_size
 );
-
-// Callback prototypes for instruction-level hooked libraries.
-
-uint8_t *hook_insmodulecb_escript_api(
-    hook_t *h, uint8_t *module_address, uint32_t module_size
-);
-
-uint8_t *hook_insmodulecb_flash32_20_0_0_228(
-    hook_t *h, uint8_t *module_address, uint32_t module_size
-);
-
-uint8_t *hook_insmodulecb_jscript9(
-    hook_t *h, uint8_t *module_address, uint32_t module_size
-);
-
-void flash_init(hook_t *h, uint8_t *module_address, uint32_t module_size);
-void jscript_init(hook_t *h, uint8_t *module_address, uint32_t module_size);
 
 typedef void VAR;
 

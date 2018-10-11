@@ -1,6 +1,6 @@
 /*
 Cuckoo Sandbox - Automated Malware Analysis.
-Copyright (C) 2012-2018 Cuckoo Foundation.
+Copyright (C) 2010-2015 Cuckoo Foundation.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,7 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "misc.h"
 #include "native.h"
 #include "ntapi.h"
-#include "utf8.h"
 
 static uint32_t _parse_mode(const char *mode)
 {
@@ -46,7 +45,7 @@ static uint32_t _parse_mode(const char *mode)
         }
 
         if(strnicmp(mode, "iexplore", 8) == 0) {
-            ret |= HOOK_MODE_BROWSER;
+            ret |= HOOK_MODE_IEXPLORE | HOOK_MODE_EXPLOIT;
             mode += 8;
             continue;
         }
@@ -144,9 +143,7 @@ void config_read(config_t *cfg)
             cfg->pipe_pid = value[0] == '1';
         }
         else if(strcmp(key, "trigger") == 0) {
-            utf8_decode_strn(
-                value, cfg->trigger, sizeof(cfg->trigger) / sizeof(wchar_t)
-            );
+            strncpy(cfg->trigger, value, sizeof(cfg->trigger));
         }
     }
     fclose(fp);

@@ -1,6 +1,6 @@
 /*
 Cuckoo Sandbox - Automated Malware Analysis.
-Copyright (C) 2014-2018 Cuckoo Foundation.
+Copyright (C) 2010-2015 Cuckoo Foundation.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,9 +24,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "bson.h"
 #include "ntapi.h"
 
-// TODO Enable Guard Page tracking when implemented correctly.
-#define EXPLOIT_GUARD_SUPPORT_ENABLED 0
-
 typedef void (*monitor_hook_t)(const char *library, void *module_handle);
 
 int misc_init(const char *shutdown_mutex);
@@ -38,7 +35,7 @@ void hook_library(const char *library, void *module_handle);
 void unhook_library(const char *library, void *module_handle);
 
 void misc_set_monitor_options(uint32_t track, uint32_t mode,
-    const wchar_t *trigger);
+    const char *trigger);
 
 wchar_t *get_unicode_buffer();
 void free_unicode_buffer(wchar_t *ptr);
@@ -199,10 +196,6 @@ int resume_thread_identifier(uint32_t thread_identifier);
 
 void logging_file_trigger(const wchar_t *filepath);
 
-// Searches for patterns in-memory while attempting to dereference any
-// pointers found along the way. Useful during R&D.
-void search_deref(uint8_t *addr, int depth, void *pattern, uint32_t length);
-
 extern uint32_t g_extra_virtual_memory;
 
 void set_processor_count(uint32_t processor_count);
@@ -220,8 +213,6 @@ uint32_t copy_uint32(const void *value);
 uint64_t copy_uint64(const void *value);
 uintptr_t copy_uintptr(const void *value);
 void *copy_ptr(const void *ptr);
-void *deref(const void *ptr, uint32_t length);
-uintptr_t derefi(uintptr_t ptr, uint32_t offset);
 void copy_return();
 
 void exploit_init();

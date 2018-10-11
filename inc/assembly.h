@@ -1,6 +1,6 @@
 /*
 Cuckoo Sandbox - Automated Malware Analysis.
-Copyright (C) 2014-2018 Cuckoo Foundation.
+Copyright (C) 2010-2015 Cuckoo Foundation.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -40,7 +40,7 @@ typedef enum _register_t {
 #define ASM_MOVE_REGIMM_SIZE 5
 #define ASM_PUSH_SIZE 5
 #define ASM_JREGZ 4
-#define ASM_JUMP_SIZE ASM_JUMP_32BIT_SIZE
+#define ASM_JUMP_SIZE 6
 
 typedef enum _register_t {
     R_EAX, R_ECX, R_EDX, R_EBX, R_ESP, R_EBP, R_ESI, R_EDI,
@@ -64,7 +64,6 @@ int asm_move_regimm(uint8_t *stub, register_t reg, uintptr_t value);
 int asm_push(uint8_t *stub, uintptr_t value);
 int asm_push32(uint8_t *stub, uintptr_t value);
 int asm_push_register(uint8_t *stub, register_t reg);
-int asm_pop_register(uint8_t *stub, register_t reg);
 int asm_jregz(uint8_t *stub, register_t reg, int8_t offset);
 int asm_jump_32bit(uint8_t *stub, const void *addr);
 int asm_jump_32bit_rel(uint8_t *stub, const void *addr, int relative);

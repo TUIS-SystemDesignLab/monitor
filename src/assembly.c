@@ -1,6 +1,6 @@
 /*
 Cuckoo Sandbox - Automated Malware Analysis.
-Copyright (C) 2014-2018 Cuckoo Foundation.
+Copyright (C) 2010-2015 Cuckoo Foundation.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,23 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "assembly.h"
 #include "misc.h"
 #include "native.h"
-
-#if __x86_64__
-
-static uint8_t g_pushaq_x64[] = {
-    // push r15 .. push rax
-    0x41, 0x57, 0x41, 0x56, 0x41, 0x55, 0x41, 0x54, 0x41, 0x53, 0x41, 0x52,
-    0x41, 0x51, 0x41, 0x50, 0x57, 0x56, 0x55, 0x54, 0x53, 0x52, 0x51, 0x50,
-};
-
-static uint8_t g_popaq_x64[] = {
-    // pop rax .. pop r15
-    // TODO Skip "pop rsp"?
-    0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x41, 0x58, 0x41, 0x59,
-    0x41, 0x5a, 0x41, 0x5b, 0x41, 0x5c, 0x41, 0x5d, 0x41, 0x5e, 0x41, 0x5f,
-};
-
-#endif
 
 #if __x86_64__
 
@@ -125,25 +108,12 @@ int asm_push_register(uint8_t *stub, register_t reg)
         *stub++ = 0x50 + (reg - R_R8);
         return 2;
     }
-#endif
-    *stub++ = 0x50 + reg;
-    return 1;
-}
-
-int asm_pop_register(uint8_t *stub, register_t reg)
-{
-#if __x86_64__
-    if(reg >= R_R8) {
-        *stub++ = 0x41;
-        *stub++ = 0x58 + (reg - R_R8);
-        return 2;
-    }
     else {
-        *stub++ = 0x58 + reg;
+        *stub++ = 0x50 + reg;
         return 1;
     }
 #else
-    *stub++ = 0x58 + reg;
+    *stub++ = 0x50 + reg;
     return 1;
 #endif
 }
@@ -156,7 +126,7 @@ int asm_add_regimm(uint8_t *stub, register_t reg, uint32_t value)
         reg -= R_R8;
     }
     else {
-        stub[0] = 0x48;
+        stub[0] = 0x90;
     }
 #else
     stub[0] = 0x90;
@@ -185,7 +155,7 @@ int asm_sub_regimm(uint8_t *stub, register_t reg, uint32_t value)
         reg -= R_R8;
     }
     else {
-        stub[0] = 0x48;
+        stub[0] = 0x90;
     }
 #else
     stub[0] = 0x90;
@@ -202,19 +172,7 @@ int asm_lea_regregimm(
 {
 #if __x86_64__
     (void) stub; (void) dst; (void) src; (void) value;
-
-    stub[0] = 0x48;
-    stub[1] = 0x8d;
-    stub[2] = 0x80 + dst * 8 + src;
-    if(src == R_RSP) {
-        stub[3] = 0x24;
-        *(uint32_t *)(stub + 4) = value;
-    }
-    else {
-        *(uint32_t *)(stub + 3) = value;
-        stub[7] = 0x90;
-    }
-    return 8;
+    return -1;
 #else
     stub[0] = 0x8d;
     stub[1] = 0x80 + dst * 8 + src;
@@ -264,16 +222,13 @@ int asm_jump_32bit_rel(uint8_t *stub, const void *addr, int relative)
 int asm_jump(uint8_t *stub, const void *addr)
 {
     uint8_t *base = stub;
-#if __x86_64__
-    // jmp qword [rel $+0] ; qword addr
-    *stub++ = 0xff; *stub++ = 0x25;
-    *stub++ = 0x00; *stub++ = 0x00;
-    *stub++ = 0x00; *stub++ = 0x00;
-    memcpy(stub, &addr, sizeof(void *));
-    stub += sizeof(void *);
-#else
-    stub += asm_jump_32bit(stub, addr);
-#endif
+
+    // Push the address on the stack.
+    stub += asm_pushv(stub, addr);
+
+    // Pop the address into the instruction pointer.
+    *stub++ = 0xc3;
+
     return stub - base;
 }
 
@@ -317,11 +272,6 @@ int asm_push_context(uint8_t *stub)
     uint8_t *base = stub;
 
 #if __x86_64__
-    // pushfq
-    *stub++ = 0x9c;
-    // pushaq
-    memcpy(stub, g_pushaq_x64, sizeof(g_pushaq_x64));
-    stub += sizeof(g_pushaq_x64);
 #else
     // pushfd
     *stub++ = 0x9c;
@@ -337,11 +287,6 @@ int asm_pop_context(uint8_t *stub)
     uint8_t *base = stub;
 
 #if __x86_64__
-    // popaq
-    memcpy(stub, g_popaq_x64, sizeof(g_popaq_x64));
-    stub += sizeof(g_popaq_x64);
-    // popfq
-    *stub++ = 0x9d;
 #else
     // popad
     *stub++ = 0x61;
@@ -357,17 +302,9 @@ int asm_push_stack_offset(uint8_t *stub, uint32_t offset)
     uint8_t *base = stub;
 
     *stub++ = 0xff;
-    if(offset < 0x80) {
-        *stub++ = 0x74;
-        *stub++ = 0x24;
-        *stub++ = offset;
-    }
-    else {
-        *stub++ = 0xb4;
-        *stub++ = 0x24;
-        *(uint32_t *) stub = offset;
-        stub += 4;
-    }
+    *stub++ = 0x74;
+    *stub++ = 0x24;
+    *stub++ = offset;
 
     return stub - base;
 }

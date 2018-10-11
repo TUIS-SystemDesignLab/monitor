@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Cuckoo Sandbox - Automated Malware Analysis
-Copyright (C) 2015-2017 Cuckoo Foundation
+Copyright (C) 2010-2015 Cuckoo Foundation
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -33,11 +33,9 @@ MULTIPLE = {
     'CFLAGS': True,
     'INC': True,
     'OBJECTS': True,
+    'OPTIONS': True,
     'MODES': True,
     'EXTENSION': False,
-    'FREE': False,
-    'FINISH': False,
-    'PIPE': False,
 }
 
 DEFAULTS = {
@@ -47,15 +45,13 @@ DEFAULTS = {
     'INC': ['-I', '../inc', '-I', '../objects/code', '-I', '../src/bson'],
     'OBJECTS': """pipe.o misc.o native.o memory.o utf8.o symbol.o ignore.o
         hooking.o unhook.o assembly.o log.o diffing.o sleep.o wmi.o exploit.o
-        flags.o hooks.o config.o flash.o iexplore.o sha1/sha1.o insns.o
+        flags.o hooks.o config.o network.o iexplore.o sha1/sha1.o insns.o
         bson/bson.o bson/numbers.o bson/encoding.o disguise.o copy.o office.o
         ../src/capstone/capstone-%(arch)s.lib""".split(),
     'LDFLAGS': ['-lws2_32', '-lshlwapi', '-lole32'],
+    'OPTIONS': [],
     'MODES': ['winxp', 'win7', 'win7x64'],
     'EXTENSION': 'exe',
-    'FINISH': '',
-    'FREE': '',
-    'PIPE': '',
 }
 
 ALL = []
@@ -96,26 +92,12 @@ def compile_file(fname, arch):
             kw.OBJECTS[idx] = path
             continue
 
-    # Write extra configuration to the config.yml file.
-    with open(os.path.join(arch, "config.yml"), "a+b") as f:
-        if kw.FINISH == 'yes' or kw.PIPE == 'yes' or kw.FREE == 'yes':
-            f.write("%s:\n" % fname[:-2])
-            f.write("  options:\n")
-            if kw.FINISH == 'yes':
-                f.write('    "unittest.finish": "1"\n')
-            if kw.PIPE == 'yes':
-                f.write('    "pipe": "cuckoo"\n')
-            if kw.FREE == 'yes':
-                f.write('    "free": "yes"\n')
-            f.write('\n')
-
-    output_exe = os.path.join(arch, fname.replace('.c', '.%s' % kw.EXTENSION))
+    output_exe = fname.replace('.c', '-%s.%s' % (arch, kw.EXTENSION))
 
     compiler = kw.CC86 if arch == 'x86' else kw.CC64
     files = ' '.join(kw.OBJECTS)
     args = ' '.join(kw.CFLAGS + kw.LDFLAGS + kw.INC)
     ALL.append(output_exe)
-
     return [
         '%s: %s %s' % (output_exe, fname, files),
         '\t%s -o %s %s %s %s' % (compiler, output_exe, fname, files, args),
@@ -125,20 +107,15 @@ def compile_file(fname, arch):
 if __name__ == '__main__':
     curdir = os.path.abspath(os.path.dirname(__file__))
 
-    # Clear the config.yml files beforehand.
-    open("x86/config.yml", "wb").close()
-    open("x64/config.yml", "wb").close()
-
     lines = []
     for fname in os.listdir(curdir):
-        if not fname.endswith('.c'):
+        if not fname.startswith('test-') or not fname.endswith('.c'):
             continue
 
         lines += compile_file(fname, 'x86')
         lines += compile_file(fname, 'x64')
 
     with open(os.path.join(curdir, 'Makefile'), 'wb') as f:
-        f.write('MAKEFLAGS = -j8\n')
         f.write('all: %s\n' % ' '.join(ALL))
         f.write('clean:\n\trm -f %s\n\n' % ' '.join(ALL))
         f.write('\n'.join(lines))

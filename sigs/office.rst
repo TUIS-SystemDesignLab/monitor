@@ -9,8 +9,8 @@ Signature::
     * Return value: void *
     * Special: true
 
-_vbe6_StringConcat
-==================
+vbe6_StringConcat
+=================
 
 Signature::
 

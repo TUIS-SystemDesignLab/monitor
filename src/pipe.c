@@ -1,6 +1,6 @@
 /*
 Cuckoo Sandbox - Automated Malware Analysis.
-Copyright (C) 2012-2018 Cuckoo Foundation.
+Copyright (C) 2010-2015 Cuckoo Foundation.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -122,17 +122,6 @@ static int _pipe_sprintf(char *out, const char *fmt, va_list args)
             ultostr((uint32_t) value, s + strlen(s), 16);
             ret += _pipe_ascii(&out, s, strlen(s));
         }
-        else if(*fmt == 'p') {
-            char s[32]; uintptr_t value = va_arg(args, uintptr_t);
-            s[0] = '0', s[1] = 'x';
-#if __x86_64__
-            ultostr((uint32_t)(value >> 32), s + 2, 16);
-            ultostr((uint32_t) value, s + strlen(s), 16);
-#else
-            ultostr(value, s + 2, 16);
-#endif
-            ret += _pipe_ascii(&out, s, strlen(s));
-        }
         fmt++;
     }
     return ret;
@@ -176,14 +165,6 @@ static int _prepend_pid(char *buf, ...)
 
 int pipe(const char *fmt, ...)
 {
-#if DEBUG_STANDALONE
-    va_list _args;
-    va_start(_args, fmt);
-    vprintf(fmt, _args);
-    va_end(_args);
-    return 0;
-#endif
-
     if(g_pipe_name[0] == 0) {
         message_box(NULL, "Pipe has not been initialized yet!", "Error", 0);
         return -1;
@@ -214,14 +195,6 @@ int pipe(const char *fmt, ...)
 
 int32_t pipe2(void *out, uint32_t outlen, const char *fmt, ...)
 {
-#if DEBUG_STANDALONE
-    va_list _args;
-    va_start(_args, fmt);
-    vprintf(fmt, _args);
-    va_end(_args);
-    return 0;
-#endif
-
     if(g_pipe_name[0] == 0) {
         message_box(NULL, "Pipe has not been initialized yet!", "Error", 0);
         return -1;

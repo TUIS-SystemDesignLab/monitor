@@ -1,6 +1,6 @@
 /*
 Cuckoo Sandbox - Automated Malware Analysis.
-Copyright (C) 2014-2018 Cuckoo Foundation.
+Copyright (C) 2010-2015 Cuckoo Foundation.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -120,24 +120,14 @@ int monitor_mode_should_propagate(const wchar_t *cmdline, uint32_t *mode)
 
     uint32_t length = lstrlenW(cmdline) * sizeof(wchar_t);
 
-    // Assuming the following are legitimate processes in iexplore monitoring
-    // mode; "iexplore.exe SCODEF:1234 CREDAT:5678" (IE8) and
-    // "IEXPLORE.EXE SCODEF:1234 CREDAT:5678 /prefetch:2" (IE11).
+    // Assuming the following is a legitimate process in iexplore monitoring
+    // mode; "iexplore.exe SCODEF:1234 CREDAT:5678".
     if((g_monitor_mode & HOOK_MODE_IEXPLORE) == HOOK_MODE_IEXPLORE &&
             MEMMEMW(L"iexplore.exe") != NULL &&
             MEMMEMW(L"SCODEF:") != NULL &&
             MEMMEMW(L"CREDAT:") != NULL) {
-        *mode |= g_monitor_mode & HOOK_MODE_BROWSER;
-        pipe("DEBUG:Following legitimate IE8 process: %Z!", cmdline);
-        return 0;
-    }
-    if((g_monitor_mode & HOOK_MODE_IEXPLORE) == HOOK_MODE_IEXPLORE &&
-            MEMMEMW(L"IEXPLORE.EXE") != NULL &&
-            MEMMEMW(L"SCODEF:") != NULL &&
-            MEMMEMW(L"CREDAT:") != NULL &&
-            MEMMEMW(L"/prefetch:2") != NULL) {
-        *mode |= g_monitor_mode & HOOK_MODE_BROWSER;
-        pipe("DEBUG:Following legitimate IE11 process: %Z!", cmdline);
+        *mode |= g_monitor_mode & HOOK_MODE_IEXPLORE;
+        pipe("DEBUG:Following legitimate iexplore process: %Z!", cmdline);
         return 0;
     }
 
@@ -160,7 +150,7 @@ int monitor_mode_should_propagate(const wchar_t *cmdline, uint32_t *mode)
         return -1;
     }
 
-    // An unknown process is being started in this process. I.e., an exploit
-    // attempt appears to have succeeded. Yes, monitor this process.
+    pipe("CRITICAL:Encountered an unknown process while in "
+        "monitoring mode: %Z!", cmdline);
     return 0;
 }

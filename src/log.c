@@ -1,6 +1,6 @@
 /*
 Cuckoo Sandbox - Automated Malware Analysis.
-Copyright (C) 2012-2018 Cuckoo Foundation.
+Copyright (C) 2010-2015 Cuckoo Foundation.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -16,11 +16,20 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <stdio.h>
+#include <windows.h>
+
 #include <stdint.h>
 #include <string.h>
 #include <stdarg.h>
-#include <windows.h>
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+#include <iphlpapi.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "bson.h"
 #include "hooking.h"
 #include "memory.h"
@@ -32,12 +41,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "symbol.h"
 #include "utf8.h"
 
+#define MALLOC(x) HeapAlloc(GetProcessHeap(), 0, (x))
+#define FREE(x) HeapFree(GetProcessHeap(), 0, (x))
+
 // Maximum length of a buffer so we try to avoid polluting logs with garbage.
 #define BUFFER_LOG_MAX 4096
 #define EXCEPTION_MAXCOUNT 0x10000
 
 static CRITICAL_SECTION g_mutex;
 static uint32_t g_starttick;
+
+static LARGE_INTEGER g_starttick_perfor;
+static LARGE_INTEGER g_starttick_perfor_freq;
+
 static uint8_t *g_api_init;
 
 static wchar_t g_log_pipename[MAX_PATH];
@@ -387,6 +403,91 @@ void log_api(uint32_t index, int is_success, uintptr_t return_value,
     bson_append_int(&b, "I", index);
     bson_append_int(&b, "T", get_current_thread_id());
     bson_append_int(&b, "t", get_tick_count() - g_starttick);
+
+    // ****************************************************
+
+        // QueryPerformanceCounter
+        LARGE_INTEGER pre_f;
+	get_tick_count();
+        get_QueryPerformanceCounter(&pre_f);
+
+        bson_append_long(&b, "c", (double)pre_f.QuadPart - g_starttick_perfor.QuadPart / g_starttick_perfor_freq.QuadPart );
+
+        // memory
+        MEMORYSTATUSEX ms = { sizeof(MEMORYSTATUSEX) };
+        get_GlobalMemoryStatusEx(&ms);
+
+	if( ms.ullAvailPhys == 0 )
+	{
+        	bson_append_long(&b, "m", 999);
+        	bson_append_long(&b, "M", 999);
+	}else{
+
+        bson_append_long(&b, "m", ms.ullAvailPhys);
+        bson_append_long(&b, "M", ms.ullTotalPhys);
+	}
+
+	//HDD
+	TCHAR Root[16];
+	ULARGE_INTEGER Used;
+	ULARGE_INTEGER Free;
+	ULARGE_INTEGER Avail;
+	ULARGE_INTEGER Total;
+	strcpy(Root,TEXT("C:\\"));
+	GetDiskFreeSpaceEx(Root,&Free,&Total,&Avail);
+	Used.QuadPart=(Total.QuadPart-Avail.QuadPart);
+        bson_append_long(&b, "H", Used.QuadPart);
+
+
+	//Network
+        DWORD dwSize = 0;
+        DWORD dwRetVal = 0;
+
+        unsigned int i, j;
+
+        MIB_IFTABLE *pIfTable;
+        MIB_IFROW *pIfRow;
+
+        pIfTable = (MIB_IFTABLE *) MALLOC(sizeof (MIB_IFTABLE));
+        if (pIfTable != NULL) {
+
+                if (GetIfTable(pIfTable, &dwSize, FALSE) == ERROR_INSUFFICIENT_BUFFER) {
+                        FREE(pIfTable);
+                        pIfTable = (MIB_IFTABLE *) MALLOC(dwSize);
+                        if (pIfTable != NULL) {
+
+                                if ((dwRetVal = GetIfTable(pIfTable, &dwSize, FALSE)) == NO_ERROR) {
+                                        for (i = 0; i < pIfTable->dwNumEntries; i++) {
+                                                pIfRow = (MIB_IFROW *) & pIfTable->table[i];
+						char str2[2];	
+						char str='N';
+						sprintf(str2,"%c%d",str,i);
+       						bson_append_string(&b,str2,pIfRow->wszName);
+						str='I';
+						sprintf(str2,"%c%d",str,i);
+       						bson_append_long(&b,str2,pIfRow->dwInOctets);
+						str='O';
+						sprintf(str2,"%c%d",str,i);
+       						bson_append_long(&b,str2,pIfRow->dwOutOctets);
+                                        }
+                                }
+                                if (pIfTable != NULL) {
+
+                                        FREE(pIfTable);
+                                        pIfTable = NULL;
+                                }
+
+                        }
+                }
+
+
+        }
+
+    bson_append_long(&b, "a", 801);
+
+    // ****************************************************
+
+
     bson_append_long(&b, "h", hash);
 
     // If failure has been determined, then log the last error as well.
@@ -464,7 +565,7 @@ void log_api(uint32_t index, int is_success, uintptr_t return_value,
             log_int32(&b, idx, value);
         }
         else if(*fmt == 'I') {
-            uint32_t *value = va_arg(args, uint32_t *);
+            uint32_t *value = va_arg(args, int *);
             log_int32(&b, idx, value != NULL ? copy_uint32(value) : 0);
         }
         else if(*fmt == 'l' || *fmt == 'p') {
@@ -631,6 +732,13 @@ void log_new_process(int track)
     wchar_t *command_line = GetCommandLineW();
 
     g_starttick = GetTickCount();
+
+
+        // QueryPerformance
+        QueryPerformanceFrequency(&g_starttick_perfor_freq);
+        QueryPerformanceCounter(&g_starttick_perfor);
+        // *************************************
+
 
     FILETIME st;
     GetSystemTimeAsFileTime(&st);
@@ -873,9 +981,6 @@ void log_init(const char *pipe_name, int track)
     wcsncpyA(g_log_pipename, pipe_name, MAX_PATH);
     open_handles();
 
-    char header[64]; uint32_t process_identifier = get_current_process_id();
-    our_snprintf(header, sizeof(header), "BSON %d\n", process_identifier);
-
-    log_raw(header, strlen(header));
+    log_raw("BSON\n", 5);
     log_new_process(track);
 }

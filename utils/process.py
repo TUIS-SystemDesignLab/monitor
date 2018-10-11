@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Cuckoo Sandbox - Automated Malware Analysis
-Copyright (C) 2014-2018 Cuckoo Foundation
+Copyright (C) 2010-2015 Cuckoo Foundation
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ import json
 import os
 import sys
 import yaml
+
 
 class DefinitionProcessor(object):
     def __init__(self, data_dir):
@@ -487,7 +488,7 @@ class SignatureProcessor(object):
 
         self.sigs = sigs
 
-    def render(self, apis, debug=False):
+    def render(self, apis=[], debug=False):
         # If set, only hook the specified functions.
         for sig in self.sigs:
             if apis and sig['apiname'] not in apis and \
@@ -598,12 +599,6 @@ class FlagsProcessor(object):
         dp.render('flags-header', self.flags_h, flags=self.flags)
 
 class InsnProcess(object):
-    registers = [
-        "eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi",
-        "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
-        "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
-    ]
-
     def __init__(self, outfile, insnfiles):
         self.outfile = outfile
         self.insnfiles = insnfiles
@@ -616,10 +611,6 @@ class InsnProcess(object):
 
         if e.get("registers"):
             r.extend(e["registers"].split())
-
-        if "stack" in e:
-            for idx, offset in enumerate(str(e["stack"]).split()):
-                r.append(("stk%d" % idx, int(offset)))
 
         return r
 
@@ -641,34 +632,15 @@ class InsnProcess(object):
         return r
 
     def make_signature(self, arguments):
-        args, signature = [], []
+        r = []
         for idx, arg in enumerate(arguments):
-            value = None
-            if isinstance(arg, tuple):
-                arg, value = arg
-
-            args.append(arg)
-            if arg.lower() in self.registers:
-                signature.append(
-                    "(HOOK_INSN_%s << %d)" % (arg.upper(), (3 - idx) * 8)
-                )
-            elif arg.lower().startswith("stk"):
-                signature.append(
-                    "(HOOK_INSN_STK(%s) << %s)" % (
-                        value, (3 - idx) * 8
-                    )
-                )
-            else:
-                raise
-
-        return args, " | ".join(signature)
+            r.append("(HOOK_INSN_%s << %d)" % (arg.upper(), (3 - idx) * 8))
+        return " | ".join(r)
 
     def process(self):
         methods = []
         for filepath in self.insnfiles:
             doc = yaml.load(open(filepath, "rb"))
-            if not doc:
-                continue
             glob = doc.pop("global", {})
 
             for funcname, info in doc.items():
@@ -680,8 +652,6 @@ class InsnProcess(object):
                     arguments = self.parse_arguments(entry)
                     logging = self.parse_logging(entry.get("logging"))
 
-                    arguments, signature = self.make_signature(arguments)
-
                     entries.append({
                         "index": idx,
                         "module": module,
@@ -691,10 +661,8 @@ class InsnProcess(object):
                         "timestamp": timestamp,
                         "offset": entry.get("offset"),
                         "arguments": arguments,
-                        "signature": signature,
+                        "signature": self.make_signature(arguments),
                         "logging": logging,
-                        "pre": entry.get("pre"),
-                        "bitmode": entry.get("bitmode", 32),
                     })
                     idx += 1
 
@@ -704,7 +672,6 @@ class InsnProcess(object):
                     "funcname": funcname,
                     "category": category,
                     "mode": mode,
-                    "init": info.get("init"),
                     "entries": entries,
                 })
 
@@ -714,7 +681,6 @@ class InsnProcess(object):
                 modules[method["module"]] = {
                     "module": method["module"],
                     "clean": method["module"].replace(".", "_"),
-                    "init": method["init"],
                     "methods": [],
                 }
 
@@ -723,18 +689,14 @@ class InsnProcess(object):
         self.methods = methods
         self.modules = modules
 
-    def write(self, apis):
-        content = self.render("insn", apis, {
+    def write(self):
+        content = self.render("insn", {
             "methods": self.methods,
             "modules": self.modules,
         })
         open(self.outfile, "wb").write(content)
 
-    def render(self, docname, apis, variables, dirpath="data/"):
-        for method in self.methods:
-            if apis and method["funcname"] not in apis:
-                method["ignore"] = True
-
+    def render(self, docname, variables, dirpath="data/"):
         fs_loader = jinja2.FileSystemLoader(dirpath)
         templ_env = jinja2.Environment(loader=fs_loader)
         templ = templ_env.get_template("%s.jinja2" % docname)
@@ -752,7 +714,7 @@ if __name__ == '__main__':
 
     insnfiles = []
     for filename in os.listdir("insn"):
-        if filename.endswith((".yml", ".yaml")):
+        if filename.endswith(".yaml"):
             insnfiles.append(os.path.join("insn", filename))
 
     ip = InsnProcess("objects/code/insns.c", insnfiles)
@@ -773,12 +735,12 @@ if __name__ == '__main__':
 
     if args.action == 'release':
         fp.write()
-        dp.render(apis)
-        ip.write(apis)
+        dp.render(apis=apis)
+        ip.write()
     elif args.action == 'debug':
         fp.write()
-        dp.render(apis, debug=True)
-        ip.write(apis)
+        dp.render(apis=apis, debug=True)
+        ip.write()
     elif args.action == 'list-categories':
         dp.list_categories()
     elif args.action == 'list-apis':

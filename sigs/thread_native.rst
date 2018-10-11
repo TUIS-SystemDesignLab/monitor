@@ -51,13 +51,14 @@ NtCreateThreadEx
 
 Signature::
 
+    * Mode: exploit
     * Prune: resolve
 
 Parameters::
 
     ** PHANDLE hThread thread_handle
     ** ACCESS_MASK DesiredAccess access
-    ** POBJECT_ATTRIBUTES ObjectAttributes thread_name
+    ** PVOID ObjectAttributes thread_name
     ** HANDLE ProcessHandle process_handle
     ** LPTHREAD_START_ROUTINE lpStartAddress function_address
     ** PVOID lpParameter parameter

@@ -9,7 +9,7 @@ MAKEFLAGS = -j8
 SIGS = $(wildcard sigs/*.rst)
 FLAGS = $(wildcard flags/*.rst)
 JINJA2 = $(wildcard data/*.jinja2)
-YAML = $(wildcard insn/*.yml)
+YAML = $(wildcard insn/*.yaml)
 
 # Dependencies for the auto-generated hook files.
 HOOKREQ = utils/process.py $(wildcard data/*.json) $(wildcard data/*.conf)
@@ -43,10 +43,6 @@ SHA1OBJ64 = objects/x64/src/sha1/sha1.o
 LIBCAPSTONE32 = src/capstone/capstone-x86.lib
 LIBCAPSTONE64 = src/capstone/capstone-x64.lib
 
-BINARIES = \
-	bin/inject-x86.exe bin/inject-x64.exe bin/is32bit.exe \
-	bin/monitor-x86.dll bin/monitor-x64.dll
-
 ifdef DEBUG
 	CFLAGS += -DDEBUG=1 -O0 -ggdb
 	RELMODE = debug
@@ -55,14 +51,11 @@ else
 	RELMODE = release
 endif
 
-ifdef DEBUG_STANDALONE
-	CFLAGS += -DDEBUG_STANDALONE=1
-endif
-
-all: $(BINARIES)
+all: bin/inject-x86.exe bin/inject-x64.exe bin/is32bit.exe \
+		bin/monitor-x86.dll bin/monitor-x64.dll
 
 $(HOOKSRC): $(SIGS) $(FLAGS) $(JINJA2) $(HOOKREQ) $(YAML)
-	python2 utils/process.py $(RELMODE) --apis=$(APIS)
+	python2  utils/process.py $(RELMODE) --apis=$(APIS)
 
 $(INSNSSRC) $(FLAGSRC): $(HOOKSRC)
 
@@ -106,13 +99,14 @@ $(INSNSOBJ32): $(INSNSSRC) $(HEADER) Makefile
 $(INSNSOBJ64): $(INSNSSRC) $(HEADER) Makefile
 	$(CC64) -c -o $@ $< $(CFLAGS)
 
+
 bin/monitor-x86.dll: bin/monitor.c $(SRCOBJ32) $(HOOKOBJ32) $(FLAGOBJ32) \
-		$(INSNSOBJ32) $(BSONOBJ32) $(LIBCAPSTONE32) $(SHA1OBJ32)
-	$(CC32) -shared -o $@ $^ $(CFLAGS) $(LDFLAGS)
+		$(INSNSOBJ32) $(BSONOBJ32) $(LIBCAPSTONE32) $(SHA1OBJ32) 
+	$(CC32) -shared -o $@ $^ $(CFLAGS) $(LDFLAGS) -liphlpapi
 
 bin/monitor-x64.dll: bin/monitor.c $(SRCOBJ64) $(HOOKOBJ64) $(FLAGOBJ64) \
 		$(INSNSOBJ64) $(BSONOBJ64) $(LIBCAPSTONE64) $(SHA1OBJ64)
-	$(CC64) -shared -o $@ $^ $(CFLAGS) $(LDFLAGS)
+	$(CC64) -shared -o $@ $^ $(CFLAGS) $(LDFLAGS) -liphlpapi
 
 bin/inject-x86.exe: bin/inject.c src/assembly.c
 	$(CC32) -o $@ $^ $(CFLAGS) $(LDFLAGS) -I inc
@@ -124,10 +118,10 @@ bin/is32bit.exe: bin/is32bit.c
 	$(CC32) -o $@ $^ $(CFLAGS)
 
 clean:
-	rm -rf $(HOOKSRC) $(HOOKOBJ32) $(HOOKOBJ64) $(FLAGSRC) $(FLAGOBJ32)
-	rm -rf $(FLAGOBJ64) $(INSNSSRC) $(INSNSOBJ32) $(INSNSOBJ64) $(SRCOBJ32)
-	rm -rf $(SRCOBJ64) $(BSONOBJ32) $(BSONOBJ64) $(SHA1OBJ32) $(SHA1OBJ64)
-	rm -rf $(BINARIES)
+	rm -rf $(HOOKSRC) $(HOOKOBJ32) $(HOOKOBJ64) $(FLAGSRC) $(FLAGOBJ32) \
+		$(FLAGOBJ64) $(INSNSSRC) $(INSNSOBJ32) $(INSNSOBJ64) $(SRCOBJ32) \
+		$(SRCOBJ64) $(BSONOBJ32) $(BSONOBJ64) $(SHA1OBJ32) $(SHA1OBJ64) \
+		$(DLL32) $(DLL64)
 
 clean-capstone:
 	rm -rf $(LIBCAPSTONE32) $(LIBCAPSTONE64)

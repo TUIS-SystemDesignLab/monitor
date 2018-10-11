@@ -1,6 +1,6 @@
 /*
 Cuckoo Sandbox - Automated Malware Analysis.
-Copyright (C) 2014-2018 Cuckoo Foundation.
+Copyright (C) 2010-2015 Cuckoo Foundation.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "unhook.h"
 
 #define MISSING_HANDLE_COUNT 128
-#define FUNCTIONSTUBSIZE 256
+#define FUNCTIONSTUBSIZE 128
 
 static SYSTEM_INFO g_si;
 static csh g_capstone;
@@ -557,7 +557,7 @@ static int _hook_determine_start(hook_t *h)
 {
     // Under Windows 7 some functions have been replaced by a function stub
     // which in turn calls the original function. E.g., a lot of functions
-    // which originally went through kernel32.dll now make a pass through
+    // which originaly went through kernel32.dll now make a pass through
     // kernelbase.dll before reaching kernel32.dll.
     // We follow these jumps and add the regions to the list for unhook
     // detection.
@@ -631,30 +631,33 @@ static int _hook_determine_start(hook_t *h)
     return 0;
 }
 
-static int _hook_call_method_arguments(uint8_t *ptr, uint32_t signature)
+static int _hook_call_method_arguments(
+    uint8_t *ptr, uint32_t signature, va_list args)
 {
     uint8_t *base = ptr;
-
-#if __x86_64__
-// = 16*reg + eflags + 4*scratch_space_reg
-#define REG_CONTEXT_SIZE (16*8 + 8 + 4*8)
-#else
-// = 8*reg + eflags
-#define REG_CONTEXT_SIZE (8*4 + 4)
-#endif
 
     for (uint32_t idx = 0; idx < 4; idx++) {
         uint8_t arg = signature & 0xff; signature >>= 8;
         if(arg >= HOOK_INSN_STK(0)) {
-            // push d/qword [e/rsp+X]
-            ptr += asm_push_stack_offset(
-                ptr, 0x1000 + REG_CONTEXT_SIZE +
-                sizeof(void *) * idx + (arg - HOOK_INSN_STK(0))
-            );
+            uint32_t offset = 36 + 4 * (arg - HOOK_INSN_STK(0));
+            if(offset >= 0x80) {
+                pipe("ERROR:Stack offset is too high");
+                return -1;
+            }
+
+            // push dword [esp+X]
+            ptr += asm_push_stack_offset(ptr, offset);
+        }
+        else if(arg == HOOK_INSN_VAR32) {
+            // push dword value
+            ptr += asm_push32(ptr, va_arg(args, uint32_t));
         }
         else if(arg >= HOOK_INSN_EAX) {
             // push register
-            ptr += asm_push_register(ptr, arg - HOOK_INSN_EAX + R_R0);
+            // ptr += asm_push_register(ptr, arg);
+            // TODO For some reason the above throws a linking error..
+            // TODO This obviously doesn't support r8-r15 in 64-bit mode.
+            *ptr++ = 0x50 + (arg - HOOK_INSN_EAX);
         }
         else {
             // Push null "push 0".
@@ -663,15 +666,7 @@ static int _hook_call_method_arguments(uint8_t *ptr, uint32_t signature)
         }
     }
 
-#if __x86_64__
-    // On 64-bit we have the fastcall calling convention, so we pop the
-    // arguments into the appropriate registers.
-    *ptr++ = 0x59;                // pop rcx
-    *ptr++ = 0x5a;                // pop rdx
-    *ptr++ = 0x41; *ptr++ = 0x58; // pop r8
-    *ptr++ = 0x41; *ptr++ = 0x59; // pop r9
-#endif
-
+    va_end(args);
     return ptr - base;
 }
 
@@ -687,7 +682,6 @@ static int _hook_copy_insns(
             // *jmpaddr = (uintptr_t) addr + *(uint32_t *)(addr + 1) + 5;
             return -1;
         }
-        // TODO Implement support for 64-bit jumps & RIP-relative addressing.
         if(*addr == 0xe9) {
             *relative = 0;
             *jmpaddr = (uintptr_t) addr + *(int32_t *)(addr + 1) + 5;
@@ -713,13 +707,8 @@ static int _hook_copy_insns(
             continue;
         }
         if(*addr >= 0x50 && *addr < 0x58) {
-            *spoff += sizeof(void *);
+            *spoff += 4;
         }
-#if __x86_64__
-        if(*addr == 0x41 && addr[1] >= 0x50 && addr[1] < 0x58) {
-            *spoff += sizeof(void *);
-        }
-#endif
 
         if(*relative == 0 && *jmpaddr != 0) {
             char hex[40]; hexdump(hex, h->addr, 16);
@@ -751,19 +740,20 @@ static int _hook_emit_jump(uint8_t *ptr, uintptr_t jmpaddr, int relative)
     }
 }
 
-int hook_insn(hook_t *h, uint32_t signature)
+int hook_insn(hook_t *h, uint32_t signature, ...)
 {
     uint8_t *ptr = h->func_stub; int r, relative; uintptr_t jmpaddr, spoff;
 
     ptr += asm_sub_esp_imm(ptr, 0x1000);
     ptr += asm_push_context(ptr);
 
-#if __x86_64__
-    // Allocate 32 (= 8*4) bytes for the x86_64 scratch space.
-    ptr += asm_sub_regimm(ptr, R_RSP, 4 * sizeof(void *));
-#endif
+    va_list args;
+    va_start(args, signature);
 
-    r = _hook_call_method_arguments(ptr, signature);
+    r = _hook_call_method_arguments(ptr, signature, args);
+
+    va_end(args);
+
     if(r < 0) {
         return r;
     }
@@ -776,11 +766,6 @@ int hook_insn(hook_t *h, uint32_t signature)
     // it to the function stub which in turn points to the original handler.
     ptr += asm_call(ptr, h->handler);
     h->handler = (FARPROC) h->func_stub;
-
-#if __x86_64__
-    // Deallocate 32 (= 8*4) bytes for the x86_64 scratch space.
-    ptr += asm_add_regimm(ptr, R_RSP, 4 * sizeof(void *));
-#endif
 
     ptr += asm_pop_context(ptr);
     ptr += asm_add_esp_imm(ptr, 0x1000);
@@ -795,7 +780,7 @@ int hook_insn(hook_t *h, uint32_t signature)
         return -1;
     }
 
-    ptr += asm_jump(ptr, h->addr + r);
+    ptr += asm_jump_32bit(ptr, h->addr + r);
 
     if((uintptr_t)(ptr - h->func_stub) >= slab_size(&g_function_stubs)) {
         pipe(
@@ -892,11 +877,10 @@ int hook(hook_t *h, void *module_handle)
 
         h->addr = h->addrcb(h, (uint8_t *) h->module_handle, module_size);
 
-        if(h->addr == NULL) {
-            if((h->report & HOOK_PRUNE_RESOLVERR) != HOOK_PRUNE_RESOLVERR) {
-                pipe("DEBUG:Error resolving function %z!%z through our "
-                    "custom callback.", h->library, h->funcname);
-            }
+        if(h->addr == NULL &&
+                (h->report & HOOK_PRUNE_RESOLVERR) != HOOK_PRUNE_RESOLVERR) {
+            pipe("DEBUG:Error resolving function %z!%z through our "
+                "custom callback.", h->library, h->funcname);
             return -1;
         }
     }
@@ -1030,11 +1014,6 @@ int hook(hook_t *h, void *module_handle)
 
     h->is_hooked = 1;
     return 0;
-}
-
-uint8_t *hook_get_mem()
-{
-    return slab_getmem(&g_function_stubs);
 }
 
 static void _hook_missing_hooks_worker(

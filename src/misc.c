@@ -1,6 +1,6 @@
 /*
 Cuckoo Sandbox - Automated Malware Analysis.
-Copyright (C) 2014-2018 Cuckoo Foundation.
+Copyright (C) 2010-2015 Cuckoo Foundation.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -118,7 +118,7 @@ void unhook_library(const char *library, void *module_handle)
 }
 
 void misc_set_monitor_options(uint32_t track, uint32_t mode,
-    const wchar_t *trigger)
+    const char *trigger)
 {
     g_monitor_track = track;
     g_monitor_mode = mode;
@@ -126,10 +126,10 @@ void misc_set_monitor_options(uint32_t track, uint32_t mode,
 
     g_monitor_trigger_mode = CONFIG_TRIGGER_NONE;
 
-    if(wcsncmp(trigger, L"file:", 5) == 0) {
+    if(strncmp(trigger, "file:", 5) == 0) {
         g_monitor_logging = 0;
         g_monitor_trigger_mode = CONFIG_TRIGGER_FILE;
-        path_get_full_pathW(&trigger[5], g_monitor_trigger);
+        path_get_full_pathA(&trigger[5], g_monitor_trigger);
     }
 }
 
@@ -1082,9 +1082,8 @@ void library_from_unicodez(const wchar_t *str, char *library, int32_t length)
         library[idx] = (char) str[idx];
     }
 
-    // Strip off any remaining ".dll" or ".ocx" parts.
-    if(stricmp(&library[length - 4], ".dll") == 0 ||
-            stricmp(&library[length - 4], ".ocx") == 0) {
+    // Strip off any remaining ".dll".
+    if(stricmp(&library[length - 4], ".dll") == 0) {
         library[length - 4] = 0;
     }
 }
@@ -1503,7 +1502,7 @@ uint8_t *our_memmem(
         idx = &_idx;
     }
 
-    if(haylength < needlength) {
+    if (haylength < needlength) {
         return NULL;
     }
 
@@ -1617,20 +1616,9 @@ static NTSTATUS g_exception_whitelist[] = {
     DBG_PRINTEXCEPTION_C,
     RPC_E_DISCONNECTED,
     STATUS_GUARD_PAGE_VIOLATION,
-    STATUS_ENTRYPOINT_NOT_FOUND,
     0xe06d7363, // MSVC C++ Exception (0xe0000000 | "msc")
     0xe0000001, // STATUS_INSUFFICIENT_MEM
     0xe0000002, // STATUS_FILE_BAD_FORMAT
-    0xe0434f4d, // .NET Exception (0xe0000000 | "COM")
-    0xe0434352, // COM+ Exception (0xe0000000 | "CCR")
-    0x406d1388, // MSDEV_SET_THREAD_NAME
-    0xc004f012, // SL_E_VALUE_NOT_FOUND
-
-#if DEBUG == 0
-    // TODO Should we perhaps add some logging for this exception? This simply
-    // happens every now and then, even without our additional code.
-    EXCEPTION_STACK_OVERFLOW,
-#endif
 };
 
 int is_exception_code_whitelisted(NTSTATUS exception_code)
@@ -1738,6 +1726,16 @@ uint8_t *module_addr_timestamp(
         }
     }
 
+#if __x86_64__
+    uint32_t bitsize = 64;
+#else
+    uint32_t bitsize = 32;
+#endif
+
+    pipe("WARNING:Unable to find the correct offsets for functions "
+        "of: %d-bit %Z (with timestamp 0x%x)",
+        bitsize, get_module_file_name((HMODULE) module_address), timestamp
+    );
     log_action("gatherer");
     return NULL;
 }
@@ -1766,6 +1764,16 @@ insnoff_t *module_addr_timestamp2(uint8_t *module_address, insnoff_t *io)
         }
     }
 
+#if __x86_64__
+    uint32_t bitsize = 64;
+#else
+    uint32_t bitsize = 32;
+#endif
+
+    pipe("WARNING:Unable to find the correct offsets for functions "
+        "of: %d-bit %Z (with timestamp 0x%x)",
+        bitsize, get_module_file_name((HMODULE) module_address), timestamp
+    );
     log_action("gatherer");
     return NULL;
 }
@@ -1956,59 +1964,4 @@ void logging_file_trigger(const wchar_t *filepath)
             exploit_init();
         }
     }
-}
-
-#define BUFSZ 128
-
-static void _search_helper(
-    uint8_t *addr, int depth, int maxdepth, void *pattern, uint32_t length,
-    uint32_t *stack, uint8_t *bufptr
-) {
-    uint8_t *buf = bufptr + depth * BUFSZ;
-
-    if(copy_bytes(buf, addr, BUFSZ) < 0) {
-        return;
-    }
-
-    for (uint32_t idx = 0; idx < BUFSZ - sizeof(uintptr_t); idx += 4) {
-        if(idx + length < BUFSZ && memcmp(buf + idx, pattern, length) == 0) {
-            stack[depth] = idx;
-
-            uint8_t *ptr = bufptr + maxdepth * BUFSZ; char *hexptr = NULL;
-            if(copy_bytes(ptr, buf + idx, BUFSZ) == 0) {
-                hexptr = (char *) bufptr + maxdepth * BUFSZ + BUFSZ;
-                hexdump(hexptr, ptr, BUFSZ - 1);
-            }
-
-            pipe(
-                "DEBUG:pattern 0x%x 0x%x 0x%x 0x%x "
-                "0x%x 0x%x 0x%x 0x%x addr=%p -> %z",
-                stack[0], stack[1], stack[2], stack[3], stack[4],
-                stack[5], stack[6], stack[7], addr + idx, hexptr
-            );
-
-            stack[depth] = 0;
-        }
-        else if(depth < maxdepth && *(uint8_t **)(buf + idx) != NULL) {
-            stack[depth] = idx;
-            _search_helper(
-                *(uint8_t **)(buf + idx), depth + 1, maxdepth,
-                pattern, length, stack, bufptr
-            );
-        }
-    }
-}
-
-void search_deref(uint8_t *addr, int depth, void *pattern, uint32_t length)
-{
-    uint32_t stack[8]; uint8_t *buf = mem_alloc(BUFSZ * depth + BUFSZ * 3);
-
-    // Maximum depth is 8, maximum pattern length is 32.
-    depth = depth < 8 ? depth : 8;
-    length = length < 32 ? length : 32;
-
-    memset(stack, 0, sizeof(stack));
-    _search_helper(addr, 0, depth, pattern, length, stack, buf);
-
-    mem_free(buf);
 }

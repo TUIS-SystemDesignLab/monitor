@@ -94,6 +94,12 @@ int close_handle(HANDLE object_handle);
 void sleep(uint32_t milliseconds);
 uint32_t get_tick_count();
 
+BOOL get_QueryPerformanceFrequency(LARGE_INTEGER *lpPerformanceCount);
+
+BOOL get_QueryPerformanceCounter(LARGE_INTEGER *lpPerformanceCount);
+
+BOOL get_GlobalMemoryStatusEx(LPMEMORYSTATUSEX lpBuffer);
+
 void register_dll_notification(LDR_DLL_NOTIFICATION_FUNCTION fn, void *param);
 
 void get_last_error(last_error_t *error);
@@ -109,8 +115,5 @@ int message_box(HWND hwnd, const char *body, const char *title, int flags);
 
 HANDLE open_thread(uint32_t desired_mask, uint32_t thread_identifier);
 uint32_t resume_thread(HANDLE thread_handle);
-
-int set_std_handle(DWORD std_handle, HANDLE file_handle);
-int is_std_handle(HANDLE file_handle);
 
 #endif

@@ -1,6 +1,6 @@
 /*
 Cuckoo Sandbox - Automated Malware Analysis.
-Copyright (C) 2016-2018 Cuckoo Foundation.
+Copyright (C) 2010-2016 Cuckoo Foundation.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -41,7 +41,7 @@ tls_copy_t *copy_get_tls()
 {
     tls_copy_t *ret = (tls_copy_t *) TlsGetValue(g_tls_index);
     if(ret == NULL) {
-        ret = (tls_copy_t *) mem_alloc_aligned(sizeof(tls_copy_t));
+        ret = (tls_copy_t *) mem_alloc(sizeof(tls_copy_t));
         TlsSetValue(g_tls_index, ret);
     }
     return ret;
@@ -210,19 +210,6 @@ void *copy_ptr(const void *ptr)
     }
     tls->active = 0;
     return NULL;
-}
-
-void *deref(const void *ptr, uint32_t offset)
-{
-    if(ptr == NULL) {
-        return NULL;
-    }
-    return copy_ptr((const uint8_t *) ptr + offset);
-}
-
-uintptr_t derefi(uintptr_t ptr, uint32_t offset)
-{
-    return (uintptr_t) deref((void *) ptr, offset);
 }
 
 void copy_return()
